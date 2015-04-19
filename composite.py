@@ -10,7 +10,7 @@ from matplotlib.colors import *
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
-data = np.empty()
+#data = np.empty()
 xdiv = int(sys.argv[2])
 ydiv = int(sys.argv[3])
 zdiv = int(sys.argv[4])
@@ -57,16 +57,22 @@ if rank == 0:
     scalarmap = cm.ScalarMappable(norm=norm, cmap=cm.hot)
     for i in range(0, nproc):
         z_min = i*chunksize
-        z_max = data.shape[2]-1 if (i+1)*chunksize-1 > data[2]-1 else (i+1)*chunksize    
-        print (z_min, z_max, "range assigned to " + str(i+1))
-        buffer = np.empty((data.shape[0], data.shape[1], z_max-z_min+1), dtype = np.float32)
-        buffer = data[0: data.shape[0]-1, 0: data.shape[1]-1, z_min: z_max]
+        z_max = data.shape[2] if (i+1)*chunksize > data.shape[2] else (i+1)*chunksize    
+        #print (z_min, z_max, "range assigned to " + str(i+1))
+        buffer = np.empty((data.shape[0], data.shape[1], z_max-z_min), dtype = np.float32)
+        buffer = data[:, :, z_min: z_max]
         bounds = np.empty(3, dtype=np.float32)
         bounds[0] = min_val
         bounds[1] = max_val
         bounds[2] = opacitypeak
+	dimensions = np.empty(3,dtype=np.int16)
+	dimensions[0] = data.shape[0]
+	dimensions[1] = data.shape[1]
+	dimensions[2] = buffer.shape[2]
+	print buffer.shape
         comm.Send(buffer, dest = i+1 , tag = 0)
         comm.Send(bounds, dest = i+1, tag = 2)
+	comm.Send(dimensions, dest = i+1, tag = 3)
     Slicelist = np.empty((data.shape[0],data.shape[1],nproc), dtype=np.float32)
     for i in range (0, nproc):
         Slice = np.empty((data.shape[0],data.shape[1]), dtype=np.float32)
@@ -105,7 +111,10 @@ else:
     
     #norm.autoscale(dimdata)
     #color mapping function
-    buffer = np.empty((data.shape[0],data.shape[1],), dtype=np.float32)
+    	
+    dimensions = np.empty(3, dtype= np.float32)
+    comm.Recv(dimensions, source = 0, tag = 3)
+    buffer = np.empty((dimensions.shape[0],dimensions.shape[1],dimensions.shape[2]), dtype=np.float32)
     bounds = np.empty(3, dtype= np.float32)
     comm.Recv(buffer, source = 0, tag = 0)
     comm.Recv(bounds, source = 0, tag = 2)
