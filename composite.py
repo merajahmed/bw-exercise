@@ -42,6 +42,7 @@ if rank == 0:
     chunksize = data.shape[2]
     chunksize = ceil(chunksize/nproc)
     #buffer = np.empty((xSize, ySize, zSize), dtype=np.float32)
+    print chunksize
     count = 0;
     
 #eliminate nans
@@ -60,7 +61,9 @@ if rank == 0:
         z_max = data.shape[2] if (i+1)*chunksize > data.shape[2] else (i+1)*chunksize    
         #print (z_min, z_max, "range assigned to " + str(i+1))
         buffer = np.empty((data.shape[0], data.shape[1], z_max-z_min), dtype = np.float32)
-        buffer = data[:, :, z_min: z_max]
+        buffer = data[:, :, z_min:z_max]
+	buffer = buffer.copy(order = 'C')
+	#print buffer
         bounds = np.empty(3, dtype=np.float32)
         bounds[0] = min_val
         bounds[1] = max_val
@@ -69,26 +72,33 @@ if rank == 0:
 	dimensions[0] = data.shape[0]
 	dimensions[1] = data.shape[1]
 	dimensions[2] = buffer.shape[2]
-	print buffer.shape
-        comm.Send(buffer, dest = i+1 , tag = 0)
-        comm.Send(bounds, dest = i+1, tag = 2)
-	comm.Send(dimensions, dest = i+1, tag = 3)
+	#print buffer.shape
+	#print rank,dimensions
+	comm.Send(dimensions, dest = i+1, tag = 0)
+        comm.Send(bounds, dest = i+1, tag = 1)
+        comm.Send(buffer, dest = i+1 , tag = 2)
     Slicelist = np.empty((data.shape[0],data.shape[1],nproc), dtype=np.float32)
     for i in range (0, nproc):
         Slice = np.empty((data.shape[0],data.shape[1]), dtype=np.float32)
-        comm.Recv(Slice, source = (i + 1), tag = 1)
+        comm.Recv(Slice, source = (i + 1), tag = 3)
+	#print 'received slice:', i+1
         Slicelist[:,:,i] = Slice
     opacity = np.empty((data.shape[0],data.shape[1],nproc), dtype=np.float32)
     color = np.empty(Slicelist.shape,dtype=[('r', float),('g', float),('b',float)])
+    #print 'colormap construction started'
     for i in range(data.shape[0]):
         for j in range(data.shape[1]):
             for k in range(nproc):
                 dimval = Slicelist[i,j,k]
                 color[i,j,k] = scalarmap.to_rgba(dimval)[:3]
+		print color[i,j,k]
                 if dimval >= opacitypeak:
                     opacity[i,j,k] = 1-((dimval-opacitypeak)/(max_val-opacitypeak))
                 elif dimval < opacitypeak:
                     opacity[i,j,k] = 1-((dimval-opacitypeak)/(min_val-opacitypeak))
+		print opacity[i,j,k]
+		#print 'debug',i,j,k
+    #print 'colormap constructed'
     for i in range(nproc):
         if i == 0:
             R = color[:,:,0]['r']
@@ -98,8 +108,10 @@ if rank == 0:
             R = np.add(np.multiply(R , (1-opacity[:,:,i])), np.multiply(color[:,:,i]['r'],opacity[:,:,i]))
             G = np.add(np.multiply(G , (1-opacity[:,:,i])), np.multiply(color[:,:,i]['g'],opacity[:,:,i]))
             B = np.add(np.multiply(B , (1-opacity[:,:,i])), np.multiply(color[:,:,i]['b'],opacity[:,:,i]))
+    print 'composition completed'
 #return rgb array
     C = (np.dstack((R,G,B)) * 255.999) .astype(np.uint8)
+    print C
     imshow(C)
     gca().invert_yaxis()
     savefig()
@@ -111,13 +123,13 @@ else:
     
     #norm.autoscale(dimdata)
     #color mapping function
-    	
-    dimensions = np.empty(3, dtype= np.float32)
-    comm.Recv(dimensions, source = 0, tag = 3)
-    buffer = np.empty((dimensions.shape[0],dimensions.shape[1],dimensions.shape[2]), dtype=np.float32)
+    dimensions = np.empty(3, dtype= np.int16)
+    comm.Recv(dimensions, source = 0, tag = 0)
+    print rank, dimensions
     bounds = np.empty(3, dtype= np.float32)
-    comm.Recv(buffer, source = 0, tag = 0)
-    comm.Recv(bounds, source = 0, tag = 2)
+    comm.Recv(bounds, source = 0, tag = 1)
+    buffer = np.empty((dimensions[0],dimensions[1],dimensions[2]), dtype=np.float32)
+    comm.Recv(buffer, source = 0, tag = 2)
     min_val = bounds[0]
     max_val = bounds[1]
     opacitypeak = bounds[2]
@@ -145,6 +157,7 @@ else:
             Slice = buffer[:,:,0]
         else:
             Slice = np.add(np.multiply(Slice , (1-opacity[:,:,i])), np.multiply(buffer[:,:,i],opacity[:,:,i]))
-    comm.Send(Slice, dest = 0, tag = 1)
+    #print 'sending slice:', rank 
+    comm.Send(Slice, dest = 0, tag = 3)
 
 

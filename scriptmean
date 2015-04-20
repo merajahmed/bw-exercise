@@ -48,7 +48,7 @@ module load bw-python
 ### NOTE: (the "in" file must exist for input)
 
 #aprun -n 32 ./a.out
-aprun -n 21 python ./composite.py "isabelPressureWithHeader.raw" 20 1 1
-#aprun -n 4 python paraMean.py "isabelPressureWithHeader.raw" 4 4 2
+#aprun -n 21 python ./composite.py "isabelPressureWithHeader.raw" 1 1 20
+aprun -n 33 python paraMean.py "isabelPressureWithHeader.raw" 4 4 2
 
 ### For more information see the man page for aprun
